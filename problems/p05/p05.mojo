@@ -16,9 +16,11 @@ fn broadcast_add(
     b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     size: UInt,
 ):
-    row = thread_idx.y
-    col = thread_idx.x
+    row = thread_idx.y # the row is the b index
+    col = thread_idx.x # the col is the a index
     # FILL ME IN (roughly 2 lines)
+    if row < size and col < size:
+        output[row * size + col] = b[row] + a[col]
 
 
 # ANCHOR_END: broadcast_add
