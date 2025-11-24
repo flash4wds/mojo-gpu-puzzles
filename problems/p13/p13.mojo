@@ -94,33 +94,35 @@ fn conv_1d_block_boundary[
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
-
     if global_i < SIZE_2:
         shared_a[local_i] = a[global_i]
-    else: 
+    else:
         shared_a[local_i] = 0
 
-    # load elements needed from next block boundary
+    # second: load elements needed for convolution at block boundary
     if local_i < CONV_2 - 1:
+        # indices from next block
         next_idx = global_i + TPB
         if next_idx < SIZE_2:
             shared_a[TPB + local_i] = a[next_idx]
         else:
+            # Initialize out-of-bounds elements to 0 to avoid reading from uninitialized memory
+            # which is an undefined behavior
             shared_a[TPB + local_i] = 0
-    
 
     if local_i < CONV_2:
-        shared_b[local_i] = b[global_i]
+        shared_b[local_i] = b[local_i]
 
     barrier()
 
     if global_i < SIZE_2:
         var local_sum: output.element_type = 0
+
         @parameter
         for j in range(CONV_2):
-            if local_i + j < SIZE_2 + CONV_2 - 1:
+            if global_i + j < SIZE_2:
                 local_sum += shared_a[local_i + j] * shared_b[j]
-        
+
         output[global_i] = local_sum
     
 
