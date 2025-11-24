@@ -34,10 +34,17 @@ fn dot_product(
     
     barrier()
 
+    stride = UInt(TPB // 2)
+    # basically we're going to have the first 4 add their index + 4 to get their latter half equivalent
+    while stride > 0:
+        if local_i < stride:
+            shared[local_i] += shared[local_i + stride]
+        
+        barrier()
+        stride //= 2
+
     if local_i == 0:
-        output[0] = 0
-        for idx in range(size):
-            output[0] = output[0] + shared[idx] 
+        output[0] = shared[0] 
 
 
 # ANCHOR_END: dot_product
