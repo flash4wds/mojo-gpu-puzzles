@@ -27,6 +27,37 @@ fn conv_1d_simple[
     global_i = block_dim.x * block_idx.x + thread_idx.x
     local_i = Int(thread_idx.x)
     # FILL ME IN (roughly 14 lines)
+    shared_a = LayoutTensor[
+        dtype,
+        Layout.row_major(SIZE + CONV - 1),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    shared_b = LayoutTensor[
+        dtype,
+        Layout.row_major(CONV),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    if global_i < SIZE:
+        shared_a[local_i] = a[global_i]
+
+    if global_i < CONV:
+        shared_b[local_i] = b[global_i]
+        
+    barrier()
+
+    # for conv_idx in range(CONV):
+    #     if global_i < SIZE and local_i + conv_idx < SIZE:
+    #         output[global_i] += shared_a[local_i + conv_idx] * b[conv_idx]
+    if global_i < SIZE:
+        var local_sum: output.element_type = 0
+        @parameter
+        for j in range(CONV):
+            if local_i + j < SIZE:
+                local_sum += shared_a[local_i + j] * shared_b[j]
+        
+        output[global_i] = local_sum
 
 
 # ANCHOR_END: conv_1d_simple
@@ -42,16 +73,56 @@ alias conv_2_layout = Layout.row_major(CONV_2)
 
 
 fn conv_1d_block_boundary[
-    in_layout: Layout, out_layout: Layout, conv_layout: Layout, dtype: DType
+    in_2_layout: Layout, out_2_layout: Layout, conv_2_layout: Layout, dtype: DType
 ](
-    output: LayoutTensor[dtype, out_layout, MutAnyOrigin],
-    a: LayoutTensor[dtype, in_layout, ImmutAnyOrigin],
-    b: LayoutTensor[dtype, conv_layout, ImmutAnyOrigin],
+    output: LayoutTensor[dtype, out_2_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, in_2_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, conv_2_layout, ImmutAnyOrigin],
 ):
     global_i = Int(block_dim.x * block_idx.x + thread_idx.x)
     local_i = Int(thread_idx.x)
     # FILL ME IN (roughly 18 lines)
+    shared_a = LayoutTensor[
+        dtype,
+        Layout.row_major(TPB + CONV_2 - 1),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    shared_b = LayoutTensor[
+        dtype,
+        Layout.row_major(CONV_2),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
 
+    if global_i < SIZE_2:
+        shared_a[local_i] = a[global_i]
+    else: 
+        shared_a[local_i] = 0
+
+    # load elements needed from next block boundary
+    if local_i < CONV_2 - 1:
+        next_idx = global_i + TPB
+        if next_idx < SIZE_2:
+            shared_a[TPB + local_i] = a[next_idx]
+        else:
+            shared_a[TPB + local_i] = 0
+    
+
+    if local_i < CONV_2:
+        shared_b[local_i] = b[global_i]
+
+    barrier()
+
+    if global_i < SIZE_2:
+        var local_sum: output.element_type = 0
+        @parameter
+        for j in range(CONV_2):
+            if local_i + j < SIZE_2 + CONV_2 - 1:
+                local_sum += shared_a[local_i + j] * shared_b[j]
+        
+        output[global_i] = local_sum
+    
 
 # ANCHOR_END: conv_1d_block_boundary
 
@@ -123,7 +194,7 @@ def main():
                         expected[i] += a_host[i + j] * b_host[j]
 
         with out.map_to_host() as out_host:
-            print("out:", out_host)
+            print("     out:", out_host)
             print("expected:", expected)
             for i in range(size):
                 assert_equal(out_host[i], expected[i])
