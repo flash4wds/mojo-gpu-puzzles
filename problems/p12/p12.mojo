@@ -12,7 +12,6 @@ alias BLOCKS_PER_GRID = (1, 1)
 alias THREADS_PER_BLOCK = (TPB, 1)
 alias dtype = DType.float32
 
-
 fn dot_product(
     output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -20,7 +19,25 @@ fn dot_product(
     size: UInt,
 ):
     # FILL ME IN (roughly 13 lines)
-    ...
+    shared = stack_allocation[
+        TPB,
+        Scalar[dtype],
+        address_space = AddressSpace.SHARED,
+    ]()
+
+    global_i = block_dim.x * block_idx.x + thread_idx.x
+    local_i = thread_idx.x
+
+    # first multiply all the numbers into the shared buffer
+    if global_i < size:
+        shared[local_i] = a[global_i] * b[global_i]
+    
+    barrier()
+
+    if local_i == 0:
+        output[0] = 0
+        for idx in range(size):
+            output[0] = output[0] + shared[idx] 
 
 
 # ANCHOR_END: dot_product
