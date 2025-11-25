@@ -25,6 +25,29 @@ fn prefix_sum_simple[
     global_i = block_dim.x * block_idx.x + thread_idx.x
     local_i = thread_idx.x
     # FILL ME IN (roughly 18 lines)
+    shared_a = LayoutTensor[
+        dtype,
+        Layout.row_major(TPB),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    if global_i < SIZE:
+        shared_a[local_i] = a[global_i]
+    else:
+        shared_a[local_i] = 0
+
+    offset: UInt = 1
+    while offset < UInt(TPB):
+        if local_i >= offset:
+            shared_a[local_i] += shared_a[local_i - offset]
+
+        barrier()
+        offset *= 2
+    
+    
+    if global_i < UInt(TPB):
+        output[global_i] = shared_a[local_i]
+    
 
 
 # ANCHOR_END: prefix_sum_simple
@@ -49,7 +72,27 @@ fn prefix_sum_local_phase[
     global_i = block_dim.x * block_idx.x + thread_idx.x
     local_i = thread_idx.x
     # FILL ME IN (roughly 20 lines)
+    shared_a = LayoutTensor[
+        dtype,
+        Layout.row_major(TPB),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    if global_i < SIZE_2:
+        shared_a[local_i] = a[global_i]
+    else:
+        shared_a[local_i] = 0
 
+    offset: UInt = 1
+    while offset < UInt(TPB):
+        if local_i >= offset:
+            shared_a[local_i] += shared_a[local_i - offset]
+        barrier()
+        offset *= 2
+
+    if global_i < UInt(SIZE_2):
+        output[global_i] = shared_a[local_i]
+    
 
 # Kernel 2: Add block sums to their respective blocks
 fn prefix_sum_block_sum_phase[
@@ -57,7 +100,10 @@ fn prefix_sum_block_sum_phase[
 ](output: LayoutTensor[dtype, layout, MutAnyOrigin], size: UInt):
     global_i = block_dim.x * block_idx.x + thread_idx.x
     # FILL ME IN (roughly 3 lines)
-
+    # initialize to 7 (last element of first block)
+    for sum_idx in range(UInt(block_dim.x - 1), UInt(SIZE_2), UInt(block_dim.x)):
+        if global_i < block_dim.x and sum_idx + global_i + 1 < SIZE_2: # only the first TPB threads will sum up
+            output[sum_idx + global_i + 1] += output[sum_idx]
 
 # ANCHOR_END: prefix_sum_complete
 
@@ -151,7 +197,7 @@ def main():
                     " to print the first `size` elements"
                 )
 
-            print("out:", out_host)
+            print("     out:", out_host)
             print("expected:", expected)
             # Here we need to use the size of the original array, not the extended one
             size = size if use_simple else SIZE_2
