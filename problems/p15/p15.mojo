@@ -29,8 +29,27 @@ fn axis_sum[
     local_i = thread_idx.x
     batch = block_idx.y
     # FILL ME IN (roughly 15 lines)
+    shared = LayoutTensor[
+        dtype,
+        Layout.row_major(TPB),
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    if local_i < SIZE:
+        shared[local_i] = a[batch, local_i]
+    else:
+        shared[local_i] = 0
+    barrier()
 
+    stride = UInt(TPB // 2)
+    while stride > 0:
+        if local_i < stride:
+            shared[local_i] += shared[local_i + stride]
+        barrier()
+        stride //= 2
 
+    if local_i == 0:
+        output[batch, 0] = shared[0]
 # ANCHOR_END: axis_sum
 
 
@@ -67,7 +86,7 @@ def main():
         ctx.synchronize()
 
         with out.map_to_host() as out_host:
-            print("out:", out)
+            print("     out:", out)
             print("expected:", expected)
             for i in range(BATCH):
                 assert_equal(out_host[i], expected[i])
